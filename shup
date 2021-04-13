@@ -29,8 +29,10 @@ Usage () {
 	    to match all div tags
 	         shup "div"       
 	    to match div tags with some string
-	         shup "div[Qynugf]
-	    will match : <div class="Qynugf">
+	         shup "div[Qynugf]"
+	    or you could be more specific (use single quotes)
+	         shup 'div[class="Qynugf"]'
+	    both will match : <div class="Qynugf">
 
 	    The string could be present anywhere inside the tags body <.>
 	    Patterns can be specified in the string using shell patterns
