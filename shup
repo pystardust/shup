@@ -1,0 +1,240 @@
+#!/bin/sh
+
+# Parse HTML
+# Basic Tag selection
+
+# dependencies "sed"
+# pystardust: notpiestardust@gmail.com
+
+Version="1.0.0"
+isRaw=0
+isText=0
+OutputIndent="  "
+
+Usage () {
+	while IFS= read _HelpLine; do
+		printf "%s\n" "$_HelpLine"
+	done<<-EOF
+	USAGE: shup [OPTIONS] ["FILTER1" "FILTER2" ...]
+	  -h                 show this help
+	  -v                 show version
+	  -r                 raw: last filter tag will not be shown
+	  -t                 text: no tags will be shown
+	  -o   "string"      specify output indentation           
+
+	FILTER FORMAT: "<tagname>"  or  "<tagname>[<search string>]"
+	    the search string should be present in the tag line
+	  EXAMPLE
+	    to match all div tags
+	         shup "div"       
+	    to match div tags with some string
+	         shup "div[Qynugf]
+	    will match : <div class="Qynugf">
+
+	    The string could be present anywhere inside the tags body <.>
+	    Patterns can be specified in the string using shell patterns
+	         shup "div[Qy?*[!h]f]"
+	 When no filters applied, shup will only format the HTML
+	EOF
+	unset _HelpLine
+
+}
+
+
+while getopts 'hvrto:' OPT; do
+	case $OPT in
+		h) Usage ; exit 0 ;;
+		v) printf "%s\n" "$Version"; exit 0 ;;
+		r) isRaw=1 ;;
+		t) isText=1 ;;
+		o) OutputIndent="${OPTARG}" ;;
+	esac
+done
+shift $((OPTIND - 1))
+
+
+TempFile=$(mktemp)
+TempFile2=$(mktemp)
+
+# Store stdin in a file
+while IFS= read Line || [ -n "$Line" ] ; do
+	printf "%s\n" "$Line"
+done > "$TempFile"
+
+
+# Prepend:
+# \001 in front of open tags
+# \002 in front of close tags
+# \003 in front of nonopening tags like: meta img
+sed -E -i '
+/^[[:space:]]$/d
+:loop
+s_\\<_\x07_g
+s_\\>_\x07_g
+/<!-- .*-->$/{
+	N
+	s/\n/ /
+	b loop
+}
+/<[^>]*$/{
+	N
+	s/\n/ /
+	b loop
+}
+s_<[^/][^>]*>_\n\x01&\n_g
+s_</[^>]*>_\n\x02&\n_g
+s_\x07_\\<_g
+s/\x01(<(!--|area|base|br|col|command|embed|hr|img|input|keygen|link|meta|param|source|track|wbr)[ >])/\x03\1/g
+'  "$TempFile"
+
+
+# Store these Marks in Variables
+OpenMark=$(printf '\001')
+CloseMark=$(printf '\002')
+NMark=$(printf '\003')
+
+# To output n ($1) number of tabs
+TabsOut () {
+	_i=0
+	while [ $_i -lt $1 ]; do
+		printf "$OutputIndent"
+		_i=$((_i+1))
+	done
+	unset _i
+}
+
+# Formatts html and indents every tag block
+FormatHtml () {
+	_Indent=0
+	while IFS= read _Line; do
+		case $_Line in
+			'')
+				;;
+			$OpenMark*)
+				TabsOut $_Indent
+				printf "%s\n" "${_Line#$OpenMark}"
+				_Indent=$((_Indent + 1))
+				;;
+			$CloseMark*)
+				_Indent=$((_Indent - 1))
+				TabsOut $_Indent
+				printf "%s\n" "${_Line#$CloseMark}"
+				;;
+			$NMark*)
+				TabsOut $_Indent
+				printf "%s\n" "${_Line#$NMark}"
+				;;
+			*)
+				TabsOut $_Indent
+				printf "%s\n" "$_Line"
+				;;
+		esac
+	done 
+	unset _Indent _Line
+}
+
+FormatHtmlText () {
+	while IFS= read _Line; do
+		case $_Line in
+			''|$OpenMark*|$CloseMark*| $NMark*)
+				;;
+			*)
+				printf "%s\n" "$_Line"
+				;;
+		esac
+	done 
+	unset _Line
+}
+
+# Gets The specified tag's body
+GetOpenCloseTag () {
+	_Flag=0
+	_Tag=$1
+	_Pattern=$2
+	Raw=${Raw:-1}
+
+	while IFS= read _Line; do
+		case $_Line in
+			# once pattern is matched _Flag is greater than 1
+			$OpenMark'<'$_Tag*$_Pattern)
+				[ $_Flag -gt 0 ] && printf "%s\n" "$_Line"
+				[ $_Flag -eq 0 ] && [ $Raw -eq 0 ] && printf "%s\n" "$_Line" 
+				_Flag=$((_Flag + 1))
+				;;
+			$OpenMark'<'$_Tag*)
+				if [ $_Flag -gt 0 ]; then
+					printf "%s\n" "$_Line"
+					_Flag=$((_Flag + 1))
+				fi
+				;;
+			$CloseMark'<'/$_Tag*)
+				if [ $_Flag -gt 1 ]; then
+					printf "%s\n" "$_Line"
+					_Flag=$((_Flag - 1))
+				elif [ $_Flag -eq 1 ]; then
+					[ $Raw -eq 0 ] && printf "%s\n" "$_Line" 
+					_Flag=$((_Flag - 1))
+				fi
+				;;
+			*)
+				[ $_Flag -gt 0 ] && printf "%s\n" "$_Line"
+				;;
+		esac
+	done
+	unset _Tag _Pattern _Flag _Line
+}
+
+
+# Gets The specified non open close tag
+GetSingletonTag () {
+	_Tag=$1
+	while IFS= read Line; do
+		case $Line in
+			$NMark'<'$_Tag*$Pattern)
+				printf "%s\n" "${Line}"
+				;;
+		esac
+	done 
+	unset _Tag
+}
+
+GetTagAndPattern () {
+	Tag=${Selection%%[*}
+	Pattern=${Selection#*[}
+
+	if [ "$Pattern" = "$Selection" ]; then
+		Pattern=
+	else
+		Pattern="${Pattern%]}*"
+	fi
+}
+
+#Apply filters
+while [ -n "$1" ]; do
+	Selection=$1
+	GetTagAndPattern
+
+	shift
+	# decide raw on the last filter
+	[ $isRaw -eq 0 ] && [ -z "$1" ] && Raw=0
+
+	case $Tag in
+		area|base|br|col|command|embed|hr|img|input|keygen|link|meta|param|source|track|wbr)
+			GetSingletonTag "$Tag" "$Pattern"
+			;;
+		*)
+			GetOpenCloseTag "$Tag" "$Pattern"
+			;;
+	esac < "$TempFile" > "$TempFile2"
+	cp "$TempFile2" "$TempFile"
+done
+
+# Format and print the text
+if [ $isText -eq 0 ]; then
+	FormatHtml <"$TempFile"
+else
+	FormatHtmlText <"$TempFile"
+fi
+
+# Clean up
+rm -f "$TempFile" "$TempFile2"
