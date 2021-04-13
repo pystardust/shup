@@ -21,6 +21,7 @@ Usage () {
 	  -r                 raw: last filter tag will not be shown
 	  -t                 text: no tags will be shown
 	  -o   "string"      specify output indentation           
+	  HTML must be provided as stdin
 
 	FILTER FORMAT: "<tagname>"  or  "<tagname>[<search string>]"
 	    the search string should be present in the tag line
@@ -34,6 +35,10 @@ Usage () {
 	    The string could be present anywhere inside the tags body <.>
 	    Patterns can be specified in the string using shell patterns
 	         shup "div[Qy?*[!h]f]"
+
+	  Example with multiple filters
+	    curl -s "www.gnu.org" | shup -r "body" "div[inner]" "ul" "li[[pP]hilo]" "a"
+
 	 When no filters applied, shup will only format the HTML
 	EOF
 	unset _HelpLine
