@@ -6,6 +6,22 @@ Simple HTML parser in shell.
 	* POSIX shell
 	* sed
 
+## Installation
+    
+To install `shup` you can edit the `Makefile` to match your local setup (`shup` is installed into the `/usr/local/bin` by default).
+
+Afterwards enter the following command to install `shup`:
+
+```sh
+sudo make install
+```
+
+To uninstall `shup`, just run:
+
+```sh
+sudo make uninstall
+```
+
 ## Usage
 
 	
